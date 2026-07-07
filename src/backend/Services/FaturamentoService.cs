@@ -10,20 +10,40 @@ namespace Parking.Api.Services
         private readonly AppDbContext _db;
         public FaturamentoService(AppDbContext db) => _db = db;
 
-        // BUG proposital: usa dono ATUAL do veículo em vez do dono NA DATA DE CORTE
+        // Gera faturas da competência (yyyy-MM) aplicando faturamento proporcional:
+        // cada veículo é cobrado apenas pelos dias em que esteve associado ao cliente no mês.
         public async Task<List<Fatura>> GerarAsync(string competencia, CancellationToken ct = default)
         {
-            // competencia formato yyyy-MM
             var part = competencia.Split('-');
             var ano = int.Parse(part[0]);
             var mes = int.Parse(part[1]);
-            var ultimoDia = DateTime.DaysInMonth(ano, mes);
-            var corte = new DateTime(ano, mes, ultimoDia, 23, 59, 59, DateTimeKind.Utc);
+            var diasNoMes = DateTime.DaysInMonth(ano, mes);
+            // Limites UTC para o filtro no banco (Npgsql exige Kind=Utc)
+            var inicioMes = new DateTime(ano, mes, 1, 0, 0, 0, DateTimeKind.Utc);
+            var fimMes = new DateTime(ano, mes, diasNoMes, 23, 59, 59, DateTimeKind.Utc);
+            // Limites por data (dia) para o cálculo proporcional em memória
+            var primeiroDia = new DateTime(ano, mes, 1);
+            var ultimoDia = new DateTime(ano, mes, diasNoMes);
 
             var mensalistas = await _db.Clientes
-                .Where(c => c.Mensalista)
+                .Where(c => c.Mensalista && c.Ativo)
                 .AsNoTracking()
                 .ToListAsync(ct);
+
+            // Associações que tocam a competência (início <= fim do mês e (sem fim ou fim >= início do mês))
+            var associacoes = await _db.Associacoes
+                .Where(a => a.DataInicio <= fimMes && (a.DataFim == null || a.DataFim >= inicioMes))
+                .AsNoTracking()
+                .ToListAsync(ct);
+
+            // Mapa de placas para exibir no detalhe da fatura
+            var idsVeiculos = associacoes.Select(a => a.VeiculoId).Distinct().ToList();
+            var veiculos = await _db.Veiculos
+                .Where(v => idsVeiculos.Contains(v.Id))
+                .ToListAsync(ct);
+            var placas = veiculos.ToDictionary(v => v.Id, v => v.Placa);
+            // Veículos inativos não geram cobrança
+            var veiculosAtivos = veiculos.Where(v => v.Ativo).Select(v => v.Id).ToHashSet();
 
             var criadas = new List<Fatura>();
 
@@ -33,21 +53,42 @@ namespace Parking.Api.Services
                     .FirstOrDefaultAsync(f => f.ClienteId == cli.Id && f.Competencia == competencia, ct);
                 if (existente != null) continue; // idempotência simples
 
-                var veiculosAtuaisDoCliente = await _db.Veiculos
-                    .Where(v => v.ClienteId == cli.Id)
-                    .Select(v => v.Id)
-                    .ToListAsync(ct);
+                var mensalidade = cli.ValorMensalidade ?? 0m;
+                var valorPorDia = mensalidade / diasNoMes;
+
+                var periodosDoCliente = associacoes.Where(a => a.ClienteId == cli.Id);
+
+                decimal total = 0m;
+                var veiculosNaFatura = new HashSet<Guid>();
+                var detalhes = new List<string>();
+
+                foreach (var a in periodosDoCliente)
+                {
+                    if (!veiculosAtivos.Contains(a.VeiculoId)) continue;
+
+                    var inicio = a.DataInicio.Date > primeiroDia ? a.DataInicio.Date : primeiroDia;
+                    var fim = (a.DataFim?.Date ?? ultimoDia) < ultimoDia ? (a.DataFim?.Date ?? ultimoDia) : ultimoDia;
+                    if (fim < inicio) continue;
+
+                    var dias = (fim - inicio).Days + 1;
+                    total += valorPorDia * dias;
+                    veiculosNaFatura.Add(a.VeiculoId);
+                    var placa = placas.TryGetValue(a.VeiculoId, out var p) ? p : a.VeiculoId.ToString().Substring(0, 8);
+                    detalhes.Add($"{placa}: {dias}/{diasNoMes} dias");
+                }
+
+                if (veiculosNaFatura.Count == 0) continue; // cliente sem veículos no mês
 
                 var fat = new Fatura
                 {
                     Competencia = competencia,
                     ClienteId = cli.Id,
-                    Valor = cli.ValorMensalidade ?? 0m,
-                    Observacao = "BUG: usando dono atual do veículo"
+                    Valor = Math.Round(total, 2, MidpointRounding.AwayFromZero),
+                    Observacao = $"Proporcional por dias — {string.Join("; ", detalhes)}"
                 };
 
-                foreach (var id in veiculosAtuaisDoCliente)
-                    fat.Veiculos.Add(new FaturaVeiculo { FaturaId = fat.Id, VeiculoId = id });
+                foreach (var vid in veiculosNaFatura)
+                    fat.Veiculos.Add(new FaturaVeiculo { FaturaId = fat.Id, VeiculoId = vid });
 
                 _db.Faturas.Add(fat);
                 criadas.Add(fat);

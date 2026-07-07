@@ -10,6 +10,7 @@ namespace Parking.Api.Models
         [Required, MaxLength(8)] public string Placa { get; set; } = string.Empty;
         [MaxLength(120)] public string? Modelo { get; set; }
         public int? Ano { get; set; }
+        public bool Ativo { get; set; } = true;
         public DateTime DataInclusao { get; set; } = DateTime.UtcNow;
 
         [Required] public Guid ClienteId { get; set; }

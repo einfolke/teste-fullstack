@@ -24,13 +24,13 @@ export default function FaturamentoPage(){
       <div className="section">
         {faturas.isLoading? <p>Carregando...</p> : (
           <table>
-            <thead><tr><th>Cliente</th><th>Competência</th><th>Valor</th><th>Qtd Veículos</th><th>Placas</th></tr></thead>
+            <thead><tr><th>Cliente</th><th>Competência</th><th>Valor</th><th>Qtd Veículos</th><th>Detalhe</th><th>Placas</th></tr></thead>
             <tbody>
               {faturas.data?.map(f=>(<FaturaRow key={f.id} f={f} />))}
             </tbody>
           </table>
         )}
-        <p className="note">BUG proposital: API associa veículos pelo dono atual, e não pelo dono na data de corte.</p>
+        <p className="note">O valor é proporcional aos dias em que cada veículo esteve associado ao cliente no mês.</p>
       </div>
     </div>
   )
@@ -41,10 +41,11 @@ function FaturaRow({f}){
   const [placas, setPlacas] = useState([])
   return (
     <tr>
-      <td>{f.clienteId}</td>
+      <td>{f.clienteNome || f.clienteId}</td>
       <td>{f.competencia}</td>
       <td>{Number(f.valor).toFixed(2)}</td>
       <td>{f.qtdVeiculos}</td>
+      <td style={{fontSize:12, color:'#475569'}}>{f.observacao || '-'}</td>
       <td>
         <button className="btn-ghost" onClick={async ()=>{
           if(!show){

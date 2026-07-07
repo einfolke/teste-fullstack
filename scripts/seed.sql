@@ -2,6 +2,7 @@
 -- Seed PostgreSQL para o teste
 create extension if not exists "uuid-ossp";
 
+drop table if exists "public"."associacao_veiculo_cliente" cascade;
 drop table if exists "public"."fatura_veiculo" cascade;
 drop table if exists "public"."fatura" cascade;
 drop table if exists "public"."veiculo" cascade;
@@ -14,6 +15,7 @@ create table "public"."cliente"(
   endereco varchar(400),
   mensalista boolean not null default false,
   valor_mensalidade numeric(12,2),
+  ativo boolean not null default true,
   data_inclusao timestamp not null default now()
 );
 
@@ -22,6 +24,7 @@ create table "public"."veiculo"(
   placa varchar(8) not null unique,
   modelo varchar(120),
   ano int,
+  ativo boolean not null default true,
   data_inclusao timestamp not null default now(),
   cliente_id uuid not null references "public"."cliente"(id)
 );
@@ -42,6 +45,16 @@ create table "public"."fatura_veiculo"(
   veiculo_id uuid not null references "public"."veiculo"(id),
   primary key (fatura_id, veiculo_id)
 );
+
+create table "public"."associacao_veiculo_cliente"(
+  id uuid primary key default uuid_generate_v4(),
+  veiculo_id uuid not null references "public"."veiculo"(id),
+  cliente_id uuid not null references "public"."cliente"(id),
+  data_inicio timestamp not null,
+  data_fim timestamp
+);
+
+create index ix_assoc_veiculo_datafim on "public"."associacao_veiculo_cliente"(veiculo_id, data_fim);
 
 -- Clientes
 insert into "public"."cliente"(id, nome, telefone, endereco, mensalista, valor_mensalidade) values
@@ -67,4 +80,17 @@ insert into "public"."veiculo"(id, placa, modelo, ano, cliente_id, data_inclusao
 update "public"."veiculo" set cliente_id='22222222-2222-2222-2222-222222222222'
 where placa='ABC1D23';
 update "public"."veiculo" set data_inclusao='2025-08-18' where placa='ABC1D23';
--- BUG atual de faturamento usa o dono ATUAL (Maria) para competência 2025-08; candidato deve corrigir para foto na data de corte.
+
+-- Histórico de associação veículo x cliente (períodos de vigência)
+-- Usado pelo faturamento proporcional. data_fim nulo = associação vigente.
+insert into "public"."associacao_veiculo_cliente"(veiculo_id, cliente_id, data_inicio, data_fim) values
+  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1','11111111-1111-1111-1111-111111111111','2025-07-10',null),
+  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2','22222222-2222-2222-2222-222222222222','2025-07-15',null),
+  -- ABC1D23: João de 01 a 17/08, depois Maria a partir de 18/08 (troca no meio do mês)
+  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa3','11111111-1111-1111-1111-111111111111','2025-08-01','2025-08-17'),
+  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa3','22222222-2222-2222-2222-222222222222','2025-08-18',null),
+  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa4','33333333-3333-3333-3333-333333333333','2025-07-20',null),
+  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa5','33333333-3333-3333-3333-333333333333','2025-08-05',null),
+  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa6','55555555-5555-5555-5555-555555555555','2025-07-01',null),
+  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa7','55555555-5555-5555-5555-555555555555','2025-08-20',null),
+  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa8','22222222-2222-2222-2222-222222222222','2025-07-01',null);

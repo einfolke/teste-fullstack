@@ -31,7 +31,9 @@ namespace Parking.Api.Controllers
             var list = await q
                 .OrderByDescending(f => f.CriadaEm)
                 .Select(f => new {
-                    f.Id, f.Competencia, f.ClienteId, f.Valor, f.CriadaEm,
+                    f.Id, f.Competencia, f.ClienteId,
+                    clienteNome = _db.Clientes.Where(c => c.Id == f.ClienteId).Select(c => c.Nome).FirstOrDefault(),
+                    f.Valor, f.CriadaEm, f.Observacao,
                     qtdVeiculos = _db.FaturasVeiculos.Count(x => x.FaturaId == f.Id)
                 })
                 .ToListAsync();

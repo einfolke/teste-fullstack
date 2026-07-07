@@ -12,6 +12,7 @@ namespace Parking.Api.Data
         public DbSet<Veiculo> Veiculos => Set<Veiculo>();
         public DbSet<Fatura> Faturas => Set<Fatura>();
         public DbSet<FaturaVeiculo> FaturasVeiculos => Set<FaturaVeiculo>();
+        public DbSet<VeiculoClienteAssociacao> Associacoes => Set<VeiculoClienteAssociacao>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -27,8 +28,9 @@ namespace Parking.Api.Data
                 e.Property(x => x.Endereco).HasColumnName("endereco").HasMaxLength(400);
                 e.Property(x => x.Mensalista).HasColumnName("mensalista");
                 e.Property(x => x.ValorMensalidade).HasColumnName("valor_mensalidade");
+                e.Property(x => x.Ativo).HasColumnName("ativo");
                 e.Property(x => x.DataInclusao).HasColumnName("data_inclusao");
-                e.HasIndex(x => new { x.Nome, x.Telefone }).IsUnique(false);
+                e.HasIndex(x => new { x.Nome, x.Telefone }).IsUnique();
                 e.HasMany(x => x.Veiculos).WithOne(x => x.Cliente!).HasForeignKey(x => x.ClienteId);
             });
 
@@ -40,6 +42,7 @@ namespace Parking.Api.Data
                 e.Property(x => x.Placa).HasColumnName("placa").IsRequired().HasMaxLength(8);
                 e.Property(x => x.Modelo).HasColumnName("modelo").HasMaxLength(120);
                 e.Property(x => x.Ano).HasColumnName("ano");
+                e.Property(x => x.Ativo).HasColumnName("ativo");
                 e.Property(x => x.DataInclusao).HasColumnName("data_inclusao");
                 e.Property(x => x.ClienteId).HasColumnName("cliente_id");
                 e.HasIndex(x => x.Placa).IsUnique();
@@ -65,6 +68,18 @@ namespace Parking.Api.Data
                 e.HasKey(x => new { x.FaturaId, x.VeiculoId });
                 e.Property(x => x.FaturaId).HasColumnName("fatura_id");
                 e.Property(x => x.VeiculoId).HasColumnName("veiculo_id");
+            });
+
+            modelBuilder.Entity<VeiculoClienteAssociacao>(e =>
+            {
+                e.ToTable("associacao_veiculo_cliente", "public");
+                e.HasKey(x => x.Id);
+                e.Property(x => x.Id).HasColumnName("id");
+                e.Property(x => x.VeiculoId).HasColumnName("veiculo_id");
+                e.Property(x => x.ClienteId).HasColumnName("cliente_id");
+                e.Property(x => x.DataInicio).HasColumnName("data_inicio");
+                e.Property(x => x.DataFim).HasColumnName("data_fim");
+                e.HasIndex(x => new { x.VeiculoId, x.DataFim });
             });
         }
     }

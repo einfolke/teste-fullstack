@@ -35,8 +35,13 @@ namespace Parking.Api.Controllers
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] ClienteCreateDto dto)
         {
+            if (string.IsNullOrWhiteSpace(dto.Nome))
+                return BadRequest("O nome é obrigatório.");
+            if (dto.Mensalista && (dto.ValorMensalidade == null || dto.ValorMensalidade <= 0))
+                return BadRequest("Informe um valor de mensalidade maior que zero para clientes mensalistas.");
+
             var existe = await _db.Clientes.AnyAsync(c => c.Nome == dto.Nome && c.Telefone == dto.Telefone);
-            if (existe) return Conflict("Cliente já existe.");
+            if (existe) return Conflict("Já existe um cliente com esse nome e telefone.");
 
             var c = new Cliente
             {
@@ -45,6 +50,7 @@ namespace Parking.Api.Controllers
                 Endereco = dto.Endereco,
                 Mensalista = dto.Mensalista,
                 ValorMensalidade = dto.ValorMensalidade,
+                Ativo = dto.Ativo,
             };
             _db.Clientes.Add(c);
             await _db.SaveChangesAsync();
@@ -62,12 +68,23 @@ namespace Parking.Api.Controllers
         public async Task<IActionResult> Update(Guid id, [FromBody] ClienteUpdateDto dto)
         {
             var c = await _db.Clientes.FindAsync(id);
-            if (c == null) return NotFound();
+            if (c == null) return NotFound("Cliente não encontrado.");
+
+            if (string.IsNullOrWhiteSpace(dto.Nome))
+                return BadRequest("O nome é obrigatório.");
+            if (dto.Mensalista && (dto.ValorMensalidade == null || dto.ValorMensalidade <= 0))
+                return BadRequest("Informe um valor de mensalidade maior que zero para clientes mensalistas.");
+
+            var duplicado = await _db.Clientes.AnyAsync(x =>
+                x.Id != id && x.Nome == dto.Nome && x.Telefone == dto.Telefone);
+            if (duplicado) return Conflict("Já existe um cliente com essa combinação de nome e telefone.");
+
             c.Nome = dto.Nome;
             c.Telefone = dto.Telefone;
             c.Endereco = dto.Endereco;
             c.Mensalista = dto.Mensalista;
-            c.ValorMensalidade = dto.ValorMensalidade;
+            c.ValorMensalidade = dto.Mensalista ? dto.ValorMensalidade : null;
+            c.Ativo = dto.Ativo;
             await _db.SaveChangesAsync();
             return Ok(c);
         }
