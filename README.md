@@ -10,6 +10,8 @@ Sistema de gestão de estacionamento com clientes, veículos, importação em ma
 ![React](https://img.shields.io/badge/React-Vite-61DAFB?logo=react&logoColor=black)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql&logoColor=white)
 ![EF Core](https://img.shields.io/badge/EF%20Core-8.0-512BD4)
+![Hangfire](https://img.shields.io/badge/Hangfire-1.8-AA1945)
+![Redis](https://img.shields.io/badge/Redis-lock-DC382D?logo=redis&logoColor=white)
 
 </div>
 
@@ -25,6 +27,7 @@ Sistema de gestão de estacionamento com clientes, veículos, importação em ma
 - [Tarefa 4 — Faturamento proporcional](#tarefa-4--faturamento-proporcional)
 - [Status Ativo / Inativo](#status-ativo--inativo)
 - [Refinamentos de UI](#refinamentos-de-ui)
+- [Melhorias de arquitetura](#melhorias-de-arquitetura)
 - [Testes automatizados](#testes-automatizados)
 - [Decisões técnicas](#decisões-técnicas)
 
@@ -86,6 +89,8 @@ dotnet test tests/Parking.Tests/Parking.Tests.csproj
 </tr>
 </table>
 
+> **Opcionais:** o **Redis** (`ConnectionStrings:Redis`) ativa o lock distribuído do faturamento — sem ele, a app roda normalmente. O **Docker** habilita os testes de integração (Testcontainers) — sem ele, eles são pulados. O painel do **Hangfire** fica em `/hangfire` (Development).
+
 ---
 
 ## Visão geral das entregas
@@ -98,7 +103,10 @@ dotnet test tests/Parking.Tests/Parking.Tests.csproj
 | 4 | Faturamento proporcional aos dias de associação | Concluído |
 | ★ | Status Ativo/Inativo (não fatura inativos) | Concluído |
 | ★ | Refinamentos de UI (modal, combobox, badges) | Concluído |
-| ★ | Suíte de testes automatizados (28 testes) | Concluído |
+| ★ | Validação com FluentValidation | Concluído |
+| ★ | Faturamento como job agendado (Hangfire) | Concluído |
+| ★ | Lock distribuído para faturamento (Redis) | Concluído |
+| ★ | Suíte de testes automatizados (30 testes) | Concluído |
 
 ---
 
@@ -199,9 +207,39 @@ O faturamento filtra `Mensalista && Ativo` e ignora veículos inativos no rateio
 
 ---
 
+## Melhorias de arquitetura
+
+Além do escopo do teste, foram adicionados recursos que aproximam a aplicação de um cenário de produção.
+
+### Validação com FluentValidation
+
+As regras de entrada saíram dos `if`s dos controllers para validators dedicados (`ClienteCreateDtoValidator`, `VeiculoCreateDtoValidator`, etc.), injetados e chamados explicitamente na action. Ganho: controllers enxutos e regras testadas isoladamente.
+
+### Faturamento como job agendado (Hangfire)
+
+O faturamento é, por natureza, um processo de lote. Com o Hangfire:
+
+- **Job recorrente** gera as faturas do mês anterior todo dia 1º às 02h (UTC).
+- Endpoint `POST /api/faturas/gerar/enfileirar` enfileira a geração em background.
+- **Storage no próprio PostgreSQL** (schema `hangfire`, criado automaticamente na inicialização).
+- **Dashboard** em `/hangfire` (somente em Development).
+
+### Lock distribuído (Redis)
+
+Para evitar faturas duplicadas quando a API roda em várias instâncias, a geração por competência é protegida por um lock distribuído (`SET NX PX` + liberação via script Lua, comparando o token do dono).
+
+- **Opcional**: sem a connection string `Redis`, usa um `NoOpDistributedLock` — a aplicação roda localmente sem Redis.
+- Basta preencher `ConnectionStrings:Redis` (ex.: `localhost:6379`) para ativar a coordenação.
+
+### Testes de integração (Testcontainers)
+
+Sobem um **PostgreSQL real em container** para validar o que o provider InMemory não cobre: o **índice único** `(Nome, Telefone)` e a exigência de `DateTime.Kind=Utc` do Npgsql. Se o Docker não estiver disponível, esses testes são **pulados automaticamente** (via `Xunit.SkippableFact`), mantendo a suíte verde.
+
+---
+
 ## Testes automatizados
 
-Projeto **xUnit** com **EF Core InMemory** — executa sem depender do PostgreSQL. **28 testes** cobrindo:
+Projeto **xUnit** com **30 testes** — **28 unitários** (EF Core InMemory, sem dependência externa) e **2 de integração** (Testcontainers). Cobertura:
 
 | Suíte | Cobertura |
 |-------|-----------|
@@ -209,6 +247,7 @@ Projeto **xUnit** com **EF Core InMemory** — executa sem depender do PostgreSQ
 | `ClientesControllerTests` | criação válida, mensalista sem valor, duplicidade Nome+Telefone, alteração de status, update inexistente |
 | `VeiculosControllerTests` | criação + associação vigente, placa inválida/duplicada, troca de cliente, alteração de status |
 | `PlacaServiceTests` | sanitização e validação de placas (Mercosul e padrão antigo) |
+| `IntegracaoPostgresTests` | índice único `(Nome, Telefone)` e exigência de `DateTime.Kind=Utc` — **pulados automaticamente sem Docker** |
 
 ---
 
@@ -240,6 +279,18 @@ Rápidos e sem dependência externa. As regras testadas são aplicadas em códig
 
 **9. DTOs como `record` posicionais com `Ativo = true` por padrão**
 Mantém compatibilidade com chamadas que não enviam o campo, sem quebrar contratos existentes.
+
+**10. FluentValidation injetado (em vez de auto-validation)**
+Chamar o validator dentro da action mantém as validações cobertas por testes unitários, que instanciam o controller diretamente.
+
+**11. Hangfire com storage no PostgreSQL**
+Reaproveita o banco já existente, sem infra adicional, e mantém os jobs persistentes entre reinicializações.
+
+**12. Lock distribuído opcional com fallback NoOp**
+A dependência de Redis é injetada e opcional: em desenvolvimento roda sem Redis; em produção escalada, ativa a coordenação apenas mudando a configuração.
+
+**13. Integração com Testcontainers e skip condicional**
+Testa comportamentos específicos do Postgres (índice único, `timestamptz`) sem tornar o Docker obrigatório para rodar a suíte.
 
 ---
 

@@ -3,6 +3,7 @@ using Parking.Api.Controllers;
 using Parking.Api.Dtos;
 using Parking.Api.Models;
 using Parking.Api.Services;
+using Parking.Api.Validators;
 using Xunit;
 
 namespace Parking.Tests;
@@ -10,7 +11,7 @@ namespace Parking.Tests;
 public class VeiculosControllerTests
 {
     private static VeiculosController NewController(Parking.Api.Data.AppDbContext db)
-        => new(db, new PlacaService());
+        => new(db, new PlacaService(), new VeiculoCreateDtoValidator(), new VeiculoUpdateDtoValidator());
 
     private static Guid AddCliente(Parking.Api.Data.AppDbContext db, string nome)
     {

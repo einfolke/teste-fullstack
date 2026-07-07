@@ -8,12 +8,24 @@ namespace Parking.Api.Services
     public class FaturamentoService
     {
         private readonly AppDbContext _db;
-        public FaturamentoService(AppDbContext db) => _db = db;
+        private readonly IDistributedLock _lock;
+
+        // O lock é opcional: sem Redis configurado, usa NoOp (não quebra os testes nem o uso local).
+        public FaturamentoService(AppDbContext db, IDistributedLock? distributedLock = null)
+        {
+            _db = db;
+            _lock = distributedLock ?? new NoOpDistributedLock();
+        }
 
         // Gera faturas da competência (yyyy-MM) aplicando faturamento proporcional:
         // cada veículo é cobrado apenas pelos dias em que esteve associado ao cliente no mês.
         public async Task<List<Fatura>> GerarAsync(string competencia, CancellationToken ct = default)
         {
+            // Lock distribuído por competência: evita que duas instâncias gerem as mesmas faturas em paralelo.
+            await using var trava = await _lock.AdquirirAsync($"faturamento:{competencia}", TimeSpan.FromMinutes(5), ct);
+            if (trava == null)
+                return new List<Fatura>(); // outra instância já está gerando esta competência
+
             var part = competencia.Split('-');
             var ano = int.Parse(part[0]);
             var mes = int.Parse(part[1]);

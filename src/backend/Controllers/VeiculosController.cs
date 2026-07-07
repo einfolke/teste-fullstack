@@ -1,4 +1,5 @@
 
+using FluentValidation;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Parking.Api.Data;
@@ -14,7 +15,20 @@ namespace Parking.Api.Controllers
     {
         private readonly AppDbContext _db;
         private readonly PlacaService _placa;
-        public VeiculosController(AppDbContext db, PlacaService placa) { _db = db; _placa = placa; }
+        private readonly IValidator<VeiculoCreateDto> _createValidator;
+        private readonly IValidator<VeiculoUpdateDto> _updateValidator;
+
+        public VeiculosController(
+            AppDbContext db,
+            PlacaService placa,
+            IValidator<VeiculoCreateDto> createValidator,
+            IValidator<VeiculoUpdateDto> updateValidator)
+        {
+            _db = db;
+            _placa = placa;
+            _createValidator = createValidator;
+            _updateValidator = updateValidator;
+        }
 
         [HttpGet]
         public async Task<IActionResult> List([FromQuery] Guid? clienteId = null)
@@ -28,6 +42,10 @@ namespace Parking.Api.Controllers
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] VeiculoCreateDto dto)
         {
+            var validacao = await _createValidator.ValidateAsync(dto);
+            if (!validacao.IsValid)
+                return BadRequest(validacao.Errors.Select(e => e.ErrorMessage));
+
             var placa = _placa.Sanitizar(dto.Placa);
             if (!_placa.EhValida(placa)) return BadRequest("Placa inválida.");
             if (await _db.Veiculos.AnyAsync(v => v.Placa == placa)) return Conflict("Placa já existe.");
@@ -57,6 +75,11 @@ namespace Parking.Api.Controllers
         {
             var v = await _db.Veiculos.FindAsync(id);
             if (v == null) return NotFound();
+
+            var validacao = await _updateValidator.ValidateAsync(dto);
+            if (!validacao.IsValid)
+                return BadRequest(validacao.Errors.Select(e => e.ErrorMessage));
+
             var placa = _placa.Sanitizar(dto.Placa);
             if (!_placa.EhValida(placa)) return BadRequest("Placa inválida.");
             if (await _db.Veiculos.AnyAsync(x => x.Placa == placa && x.Id != id)) return Conflict("Placa já existe.");

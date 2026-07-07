@@ -1,4 +1,5 @@
 
+using Hangfire;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Parking.Api.Data;
@@ -14,13 +15,27 @@ namespace Parking.Api.Controllers
     {
         private readonly AppDbContext _db;
         private readonly FaturamentoService _fat;
-        public FaturasController(AppDbContext db, FaturamentoService fat) { _db = db; _fat = fat; }
+        private readonly IBackgroundJobClient _jobs;
+        public FaturasController(AppDbContext db, FaturamentoService fat, IBackgroundJobClient jobs)
+        {
+            _db = db;
+            _fat = fat;
+            _jobs = jobs;
+        }
 
         [HttpPost("gerar")]
         public async Task<IActionResult> Gerar([FromBody] GerarFaturaRequest req, CancellationToken ct)
         {
             var criadas = await _fat.GerarAsync(req.Competencia, ct);
             return Ok(new { criadas = criadas.Count });
+        }
+
+        // Enfileira a geração em background (Hangfire) e responde imediatamente.
+        [HttpPost("gerar/enfileirar")]
+        public IActionResult Enfileirar([FromBody] GerarFaturaRequest req)
+        {
+            var jobId = _jobs.Enqueue<FaturamentoJob>(j => j.GerarCompetenciaAsync(req.Competencia, CancellationToken.None));
+            return Accepted(new { jobId });
         }
 
         [HttpGet]

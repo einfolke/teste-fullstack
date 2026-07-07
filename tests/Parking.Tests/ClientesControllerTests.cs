@@ -2,17 +2,20 @@ using Microsoft.AspNetCore.Mvc;
 using Parking.Api.Controllers;
 using Parking.Api.Dtos;
 using Parking.Api.Models;
+using Parking.Api.Validators;
 using Xunit;
 
 namespace Parking.Tests;
 
 public class ClientesControllerTests
 {
+    private static ClientesController NewController(Parking.Api.Data.AppDbContext db)
+        => new(db, new ClienteCreateDtoValidator(), new ClienteUpdateDtoValidator());
     [Fact]
     public async Task Create_valido_retorna_created_e_persiste_ativo()
     {
         using var db = TestDb.Create();
-        var ctrl = new ClientesController(db);
+        var ctrl = NewController(db);
 
         var res = await ctrl.Create(new ClienteCreateDto("João", "31999990001", "Rua A", true, 189.90m, Ativo: true));
 
@@ -25,7 +28,7 @@ public class ClientesControllerTests
     public async Task Create_mensalista_sem_valor_retorna_badrequest()
     {
         using var db = TestDb.Create();
-        var ctrl = new ClientesController(db);
+        var ctrl = NewController(db);
 
         var res = await ctrl.Create(new ClienteCreateDto("João", null, null, true, null));
 
@@ -38,7 +41,7 @@ public class ClientesControllerTests
         using var db = TestDb.Create();
         db.Clientes.Add(new Cliente { Nome = "João", Telefone = "31999990001" });
         await db.SaveChangesAsync();
-        var ctrl = new ClientesController(db);
+        var ctrl = NewController(db);
 
         var res = await ctrl.Create(new ClienteCreateDto("João", "31999990001", null, false, null));
 
@@ -52,7 +55,7 @@ public class ClientesControllerTests
         var cli = new Cliente { Nome = "João", Telefone = "31999990001", Mensalista = true, ValorMensalidade = 100m, Ativo = true };
         db.Clientes.Add(cli);
         await db.SaveChangesAsync();
-        var ctrl = new ClientesController(db);
+        var ctrl = NewController(db);
 
         var res = await ctrl.Update(cli.Id, new ClienteUpdateDto("João", "31999990001", null, true, 100m, Ativo: false));
 
@@ -68,7 +71,7 @@ public class ClientesControllerTests
         var joao = new Cliente { Nome = "João", Telefone = "31999990001" };
         db.Clientes.Add(joao);
         await db.SaveChangesAsync();
-        var ctrl = new ClientesController(db);
+        var ctrl = NewController(db);
 
         // Tenta renomear João para a mesma combinação de Maria
         var res = await ctrl.Update(joao.Id, new ClienteUpdateDto("Maria", "31988880002", null, false, null));
@@ -80,7 +83,7 @@ public class ClientesControllerTests
     public async Task Update_cliente_inexistente_retorna_notfound()
     {
         using var db = TestDb.Create();
-        var ctrl = new ClientesController(db);
+        var ctrl = NewController(db);
 
         var res = await ctrl.Update(Guid.NewGuid(), new ClienteUpdateDto("X", null, null, false, null));
 
